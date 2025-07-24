@@ -1,1 +1,10 @@
 CLAUDE.md
+.env
+.env.*
+!.env.example
+wallets.json
+*.log
+logs/
+__pycache__/
+*.pyc
+.DS_Store

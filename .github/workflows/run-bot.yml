@@ -1,0 +1,52 @@
+name: Run Bot Temporarily
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 6시간마다 실행 (GitHub Actions 제한 회피)
+    - cron: '0 */6 * * *'
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350  # 5시간 50분
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.13'
+    
+    - name: Install dependencies
+      run: |
+        pip install -r requirements.txt
+    
+    - name: Run bot
+      env:
+        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        RPC_URL: ${{ secrets.RPC_URL }}
+        PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
+        DROP_RATE: ${{ secrets.DROP_RATE }}
+        MAX_DAILY_AMOUNT: ${{ secrets.MAX_DAILY_AMOUNT }}
+        COOLDOWN_SECONDS: ${{ secrets.COOLDOWN_SECONDS }}
+        ADMIN_USER_ID: ${{ secrets.ADMIN_USER_ID }}
+        GROUP_CONTROL_ENABLED: ${{ secrets.GROUP_CONTROL_ENABLED }}
+        ALLOWED_GROUP_IDS: ${{ secrets.ALLOWED_GROUP_IDS }}
+      run: |
+        # wallets.json 복원 (Artifacts에서)
+        if [ -f "wallets.json" ]; then
+          cp wallets.json wallets.json.backup
+        fi
+        
+        # 봇 실행 (5시간 50분)
+        timeout 21000 python rbtc_bot.py || true
+        
+    - name: Save wallet data
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: wallet-data
+        path: wallets.json
+        retention-days: 90

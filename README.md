@@ -2,6 +2,10 @@
 
 A Telegram bot that randomly drops RBTC (RSK Bitcoin) to registered users on the RSK/Rootstock network.
 
+## 🚀 Quick Deploy
+
+[![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/template/deploy?template=https://github.com/97woo/tgbot)
+
 ## Features
 
 - 🎯 **Wallet Registration**: Users can register their RSK wallet address

@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  rbtc-bot:
+    build: .
+    container_name: rbtc-telegram-bot
+    restart: unless-stopped
+    environment:
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - RPC_URL=${RPC_URL}
+      - PRIVATE_KEY=${PRIVATE_KEY}
+      - DROP_RATE=${DROP_RATE}
+      - MAX_DAILY_AMOUNT=${MAX_DAILY_AMOUNT}
+      - COOLDOWN_SECONDS=${COOLDOWN_SECONDS}
+      - ADMIN_USER_ID=${ADMIN_USER_ID}
+      - GROUP_CONTROL_ENABLED=${GROUP_CONTROL_ENABLED}
+      - ALLOWED_GROUP_IDS=${ALLOWED_GROUP_IDS}
+      - TZ=Asia/Seoul
+    volumes:
+      # Railway에서는 영구 볼륨을 마운트해야 함
+      - /data/wallets.json:/app/wallets.json
+      - /data/logs:/app/logs

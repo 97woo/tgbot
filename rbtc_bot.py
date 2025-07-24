@@ -403,15 +403,13 @@ class RBTCDropBot:
             info_text = f"""
 📊 봇 설정 정보:
 
-🎲 드랍 확률: {self.drop_rate*100:.1f}%
+🎲 드랍 확률: 비밀 🤫
 💰 하루 최대: {self.max_daily_amount:.8f} RBTC
 📈 오늘 전송: {today_sent:.8f} RBTC
 👥 등록 지갑: {len(self.wallet_manager.get_all_wallets())}개
 ⏰ 전송 쿨타임: {int(self.cooldown_seconds)}초
 
 🌐 체인: Rootstock Network
-🔒 그룹 관리: {'활성화' if self.group_control_enabled else '비활성화'}
-📋 승인된 그룹: {len(self.allowed_group_ids)}개
             """
             self.bot.reply_to(message, info_text)
         
