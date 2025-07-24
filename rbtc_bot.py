@@ -244,6 +244,11 @@ class RBTCDropBot:
         # 관리자 전용 그룹 관리 활성화 여부
         self.group_control_enabled = os.getenv('GROUP_CONTROL_ENABLED', 'true').lower() == 'true'
         
+        # 환경변수 디버깅 (임시)
+        print(f"[DEBUG] Token exists: {bool(self.bot_token)}")
+        print(f"[DEBUG] Token length: {len(self.bot_token) if self.bot_token else 0}")
+        print(f"[DEBUG] Token starts with: {self.bot_token[:10] if self.bot_token else 'None'}...")
+        
         if not self.bot_token:
             raise ValueError("TELEGRAM_BOT_TOKEN이 설정되지 않았습니다.")
         
@@ -297,6 +302,11 @@ class RBTCDropBot:
         @self.bot.message_handler(commands=['start'])
         def handle_start(message):
             """시작 명령어"""
+            # 사용자 ID 로깅 (임시)
+            user_id = message.from_user.id
+            username = message.from_user.username or "No username"
+            logging.info(f"User ID: {user_id}, Username: @{username}")
+            
             welcome_text = f"""
 🎯 RSK RBTC 드랍 봇에 오신 것을 환영합니다!
 
