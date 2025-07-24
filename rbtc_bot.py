@@ -237,17 +237,6 @@ class RBTCDropBot:
         self.max_daily_amount = float(os.getenv('MAX_DAILY_AMOUNT', '0.00003125'))  # 0.00003125 RBTC (~5000 KRW at 160M KRW/BTC)
         self.admin_user_id = os.getenv('ADMIN_USER_ID')
         
-        # 승인된 그룹 채팅 ID 리스트 (환경변수에서 콤마로 구분)
-        allowed_groups = os.getenv('ALLOWED_GROUP_IDS', '')
-        self.allowed_group_ids = set(allowed_groups.split(',')) if allowed_groups else set()
-        
-        # 관리자 전용 그룹 관리 활성화 여부
-        self.group_control_enabled = os.getenv('GROUP_CONTROL_ENABLED', 'true').lower() == 'true'
-        
-        # 환경변수 디버깅 (임시)
-        print(f"[DEBUG] Token exists: {bool(self.bot_token)}")
-        print(f"[DEBUG] Token length: {len(self.bot_token) if self.bot_token else 0}")
-        print(f"[DEBUG] Token starts with: {self.bot_token[:10] if self.bot_token else 'None'}...")
         
         if not self.bot_token:
             raise ValueError("TELEGRAM_BOT_TOKEN이 설정되지 않았습니다.")
@@ -278,26 +267,6 @@ class RBTCDropBot:
     
     def setup_handlers(self):
         """메시지 핸들러 설정"""
-        
-        # 그룹 초대 이벤트 핸들러
-        @self.bot.message_handler(content_types=['new_chat_members'])
-        def handle_new_chat_members(message):
-            """봇이 그룹에 추가될 때 처리"""
-            new_members = message.new_chat_members
-            bot_info = self.bot.get_me()
-            
-            for member in new_members:
-                if member.id == bot_info.id:
-                    # 봇이 그룹에 추가됨
-                    self.handle_bot_added_to_group(message)
-        
-        # my_chat_member 업데이트 핸들러 (봇의 상태 변경)
-        @self.bot.my_chat_member_handler(func=lambda update: True)
-        def handle_my_chat_member(update):
-            """봇의 채팅 멤버 상태 변경 처리"""
-            if update.new_chat_member.status == 'member':
-                # 봇이 그룹에 추가됨
-                self.handle_bot_added_to_group_update(update)
         
         @self.bot.message_handler(commands=['start'])
         def handle_start(message):
@@ -423,46 +392,6 @@ class RBTCDropBot:
             """
             self.bot.reply_to(message, info_text)
         
-        @self.bot.message_handler(commands=['groups'])
-        def handle_groups(message):
-            """승인된 그룹 목록 (관리자 전용)"""
-            user_id = str(message.from_user.id)
-            
-            # 관리자 확인
-            if user_id != self.admin_user_id:
-                self.bot.reply_to(message, "❌ 이 명령은 관리자만 사용할 수 있습니다.")
-                return
-            
-            if not self.allowed_group_ids:
-                self.bot.reply_to(message, "📋 승인된 그룹이 없습니다.")
-                return
-            
-            groups_text = "📋 승인된 그룹 목록:\n\n"
-            for group_id in self.allowed_group_ids:
-                groups_text += f"• {group_id}\n"
-            
-            self.bot.reply_to(message, groups_text)
-        
-        @self.bot.message_handler(commands=['addgroup'])
-        def handle_add_group(message):
-            """그룹 승인 추가 (관리자 전용)"""
-            user_id = str(message.from_user.id)
-            
-            # 관리자 확인
-            if user_id != self.admin_user_id:
-                self.bot.reply_to(message, "❌ 이 명령은 관리자만 사용할 수 있습니다.")
-                return
-            
-            # 그룹 ID 파싱
-            parts = message.text.split()
-            if len(parts) < 2:
-                self.bot.reply_to(message, "사용법: /addgroup <group_id>")
-                return
-            
-            group_id = parts[1]
-            self.allowed_group_ids.add(group_id)
-            self.bot.reply_to(message, f"✅ 그룹 {group_id}가 승인 목록에 추가되었습니다.")
-            logging.info(f"그룹 승인됨: {group_id} by {user_id}")
         
         @self.bot.message_handler(func=lambda message: True)
         def handle_all_messages(message):
@@ -591,70 +520,6 @@ class RBTCDropBot:
         finally:
             logging.info("RBTC 드랍 봇 종료")
     
-    def handle_bot_added_to_group(self, message):
-        """봇이 그룹에 추가될 때 처리"""
-        chat_id = str(message.chat.id)
-        chat_title = message.chat.title or "Unknown Group"
-        inviter_id = str(message.from_user.id) if message.from_user else "Unknown"
-        inviter_name = message.from_user.first_name if message.from_user else "Unknown"
-        
-        logging.info(f"봇이 그룹에 추가됨: {chat_title} (ID: {chat_id}) by {inviter_name} (ID: {inviter_id})")
-        
-        # 그룹 관리 기능이 비활성화된 경우 모든 그룹 허용
-        if not self.group_control_enabled:
-            welcome_msg = f"안녕하세요! {chat_title} 그룹에 초대해주셔서 감사합니다! 💸\n" \
-                         "메시지를 보내면 랜덤하게 RBTC를 드랍합니다!"
-            self.bot.send_message(chat_id, welcome_msg)
-            return
-        
-        # 관리자가 아닌 사람이 초대한 경우
-        if inviter_id != self.admin_user_id:
-            # 승인된 그룹인지 확인
-            if chat_id not in self.allowed_group_ids:
-                error_msg = f"❌ 죄송합니다. 이 봇은 관리자만 그룹에 추가할 수 있습니다.\n" \
-                           f"관리자에게 문의해주세요."
-                self.bot.send_message(chat_id, error_msg)
-                
-                # 그룹에서 나가기
-                try:
-                    self.bot.leave_chat(chat_id)
-                    logging.info(f"미승인 그룹에서 나감: {chat_title} (ID: {chat_id})")
-                except Exception as e:
-                    logging.error(f"그룹 나가기 실패: {e}")
-                return
-        
-        # 관리자가 초대했거나 승인된 그룹인 경우
-        if inviter_id == self.admin_user_id:
-            # 승인된 그룹 목록에 추가
-            self.allowed_group_ids.add(chat_id)
-            logging.info(f"관리자가 그룹에 봇 추가: {chat_title} (ID: {chat_id})")
-        
-        welcome_msg = f"안녕하세요! {chat_title} 그룹에 초대해주셔서 감사합니다! 💸\n" \
-                     "메시지를 보내면 랜덤하게 RBTC를 드랍합니다!"
-        self.bot.send_message(chat_id, welcome_msg)
-    
-    def handle_bot_added_to_group_update(self, update):
-        """봇의 채팅 멤버 상태 변경 처리 (my_chat_member 업데이트)"""
-        chat_id = str(update.chat.id)
-        chat_title = update.chat.title or "Unknown Group"
-        inviter_id = str(update.from_user.id) if update.from_user else "Unknown"
-        inviter_name = update.from_user.first_name if update.from_user else "Unknown"
-        
-        logging.info(f"봇 상태 변경: {chat_title} (ID: {chat_id}) by {inviter_name} (ID: {inviter_id})")
-        
-        # 그룹 관리 기능이 비활성화된 경우 모든 그룹 허용
-        if not self.group_control_enabled:
-            return
-        
-        # 관리자가 아닌 사람이 초대한 경우
-        if inviter_id != self.admin_user_id and chat_id not in self.allowed_group_ids:
-            try:
-                error_msg = f"❌ 죄송합니다. 이 봇은 관리자만 그룹에 추가할 수 있습니다."
-                self.bot.send_message(chat_id, error_msg)
-                self.bot.leave_chat(chat_id)
-                logging.info(f"미승인 그룹에서 나감: {chat_title} (ID: {chat_id})")
-            except Exception as e:
-                logging.error(f"그룹 처리 실패: {e}")
 
 def main():
     """메인 함수"""
