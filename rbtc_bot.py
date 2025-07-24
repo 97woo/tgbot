@@ -189,9 +189,10 @@ class TransactionManager:
             optimal_gas = gas_info['final']
             
             # 2단계: 가스 가격 동적 조정 (재시도시 증가)
-            # RSK는 더 낮은 가스 가격 사용
-            base_gas_price = 0.06
-            gas_price = base_gas_price + (retry_count * 0.02)
+            # RSK 메인넷 최소 가스 가격 (로벨 업그레이드 이후)
+            min_gas_price = 0.0237  # 0.0237 Gwei (로벨 업그레이드 이후 최소값)
+            base_gas_price = min_gas_price * 1.1  # 최소값보다 10% 높게 설정
+            gas_price = base_gas_price + (retry_count * 0.01)  # 재시도시 0.01 Gwei씩 증가
             
             # 3단계: 트랜잭션 구성 (가스 한도 명시적 설정)
             transaction = {
@@ -234,7 +235,7 @@ class RBTCDropBot:
         self.base_rpc = os.getenv('RPC_URL', 'https://public-node.testnet.rsk.co')
         self.private_key = os.getenv('PRIVATE_KEY')
         self.drop_rate = float(os.getenv('DROP_RATE', '0.05'))  # 5%
-        self.max_daily_amount = float(os.getenv('MAX_DAILY_AMOUNT', '0.00003125'))  # 0.00003125 RBTC (~5000 KRW at 160M KRW/BTC)
+        self.max_daily_amount = float(os.getenv('MAX_DAILY_AMOUNT', '0.00003125'))  # 0.00003125 RBTC (~5000원 at 160M KRW/BTC)
         self.admin_user_id = os.getenv('ADMIN_USER_ID')
         
         
@@ -286,8 +287,8 @@ class RBTCDropBot:
 
 🎲 RBTC 에어드랍:
 • 채팅 메시지 작성시 {self.drop_rate*100:.1f}% 확률로 자동 드랍
-• 1회 드랍량: 0.00000625 RBTC
-• 일일 최대: 0.00003125 RBTC
+• 1회 드랍량: 0.0000025 RBTC (~400원)
+• 일일 최대: {self.max_daily_amount:.8f} RBTC (~5,000원)
 • 쿨다운: {self.cooldown_seconds}초
 
 💡 시작하려면 /set 명령어로 지갑을 등록하세요!
@@ -369,7 +370,18 @@ class RBTCDropBot:
             wallet = self.wallet_manager.get_wallet(user_id)
             
             if wallet:
-                self.bot.reply_to(message, f"💳 등록된 지갑: {wallet}")
+                # RBTC 잔액 조회
+                balance = 0.0
+                if self.tx_manager:
+                    balance = self.tx_manager.get_rbtc_balance(wallet)
+                
+                wallet_text = f"""
+💳 내 지갑 정보
+
+📍 주소: `{wallet}`
+💰 잔액: {balance:.8f} RBTC
+                """
+                self.bot.reply_to(message, wallet_text, parse_mode='Markdown')
             else:
                 self.bot.reply_to(message, "❌ 등록된 지갑이 없습니다. /set 명령어로 지갑을 등록해주세요.")
         
@@ -471,8 +483,8 @@ class RBTCDropBot:
         
         logging.info(f"🎉 드랍 당첨! 사용자: {user_name}, 지갑: {wallet_address[:10]}...")
         
-        # 드랍 금액 (0.00000001 ~ 0.00000005 RBTC - ~$0.0016 ~ $0.008)
-        drop_amount = 0.00000625  # 고정 금액: 0.00000625 RBTC (~1,000원)
+        # 드랍 금액 (가스비 고려한 적정 금액)
+        drop_amount = 0.0000025  # 고정 금액: 0.0000025 RBTC (~400원)
         
         # 일일 한도 체크
         if today_sent + drop_amount > self.max_daily_amount:
@@ -480,11 +492,23 @@ class RBTCDropBot:
             if drop_amount < 0.00000001:
                 return  # 너무 적으면 드랍 안함
         
-        # RBTC 전송
-        tx_hash = self.tx_manager.send_rbtc(
-            wallet_address, 
-            drop_amount
-        )
+        # RBTC 전송 (최대 5회 재시도)
+        max_retries = 5
+        tx_hash = None
+        
+        for attempt in range(max_retries):
+            tx_hash = self.tx_manager.send_rbtc(
+                wallet_address, 
+                drop_amount
+            )
+            
+            if tx_hash:
+                break
+            else:
+                logging.warning(f"드랍 전송 실패 (시도 {attempt + 1}/{max_retries}): {user_name}")
+                if attempt < max_retries - 1:
+                    import time
+                    time.sleep(2)  # 2초 대기 후 재시도
         
         if tx_hash:
             # 일일 전송량 업데이트
@@ -507,6 +531,9 @@ class RBTCDropBot:
             
             self.bot.reply_to(message, drop_text, parse_mode='Markdown', disable_web_page_preview=True)
             logging.info(f"드랍 성공: {user_name} ({user_id}) -> {drop_amount:.8f} RBTC (쿨타임 {self.cooldown_seconds}초 시작)")  # [modify]
+        else:
+            # 모든 재시도 실패시 로그만 남김
+            logging.error(f"드랍 전송 완전 실패: {user_name} ({user_id}) - 모든 재시도 소진")
     
     def run(self):
         """봇 실행"""
