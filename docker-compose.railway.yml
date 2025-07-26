@@ -13,8 +13,7 @@ services:
       - MAX_DAILY_AMOUNT=${MAX_DAILY_AMOUNT}
       - COOLDOWN_SECONDS=${COOLDOWN_SECONDS}
       - ADMIN_USER_ID=${ADMIN_USER_ID}
-      - GROUP_CONTROL_ENABLED=${GROUP_CONTROL_ENABLED}
-      - ALLOWED_GROUP_IDS=${ALLOWED_GROUP_IDS}
+      - BOT_WALLET_ADDRESS=${BOT_WALLET_ADDRESS}
       - TZ=Asia/Seoul
     volumes:
       # Railway에서는 영구 볼륨을 마운트해야 함
