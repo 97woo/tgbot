@@ -577,8 +577,7 @@ class RBTCDropBot:
         
         # [modify] 메시지 길이 체크 (5글자 이상)
         if not message.text or len(message.text) < 5:
-            logging.info(f"메시지 길이 미달: {len(message.text) if message.text else 0}자")
-            return  # 5글자 미만시 드랍 없음
+            return  # 5글자 미만시 드랍 없음 (로그 없음)
         
         # 지갑이 등록되어 있는지 확인
         wallet_address = self.wallet_manager.get_wallet(user_id)
@@ -600,6 +599,12 @@ class RBTCDropBot:
         today_sent = self.daily_sent.get(today, 0)
         
         if today_sent >= self.max_daily_amount:
+            # 오늘 처음으로 한도 도달시에만 알림
+            if not hasattr(self, 'daily_limit_notified') or self.daily_limit_notified != today:
+                self.daily_limit_notified = today
+                limit_msg = "💸 오늘의 RBTC 드랍이 모두 소진되었습니다!\n내일 다시 찾아주세요~ 🌙"
+                self.bot.send_message(message.chat.id, limit_msg)
+                logging.info(f"일일 한도 도달 알림: {today_sent:.8f}/{self.max_daily_amount:.8f} RBTC")
             return  # 일일 한도 초과
         
         # 랜덤 드랍 여부 결정
