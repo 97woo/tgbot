@@ -287,8 +287,8 @@ class RBTCDropBot:
 
 🎲 RBTC 에어드랍:
 • 채팅 메시지 작성시 {self.drop_rate*100:.1f}% 확률로 자동 드랍
-• 1회 드랍량: 0.0000025 RBTC (~400원)
-• 일일 최대: {self.max_daily_amount:.8f} RBTC (~5,000원)
+• 1회 드랍량: 0.0000025 RBTC
+• 일일 최대: {self.max_daily_amount:.8f} RBTC
 • 쿨다운: {self.cooldown_seconds}초
 
 💡 시작하려면 /set 명령어로 지갑을 등록하세요!
