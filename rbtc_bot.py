@@ -433,7 +433,7 @@ class RBTCDropBot:
                 self.bot.reply_to(message, success_text)
                 logging.info(f"지갑 등록 성공: {user_name} ({user_id}) -> {wallet_address}")
             else:
-                self.bot.reply_to(message, "❌ 유효하지 않은 지갑 주소입니다. Base 체인 주소를 확인해주세요.")
+                self.bot.reply_to(message, "❌ 유효하지 않은 지갑 주소입니다. RSK 체인 주소를 확인해주세요.")
         
         @self.bot.message_handler(commands=['wallet'])
         def handle_wallet_info(message):
