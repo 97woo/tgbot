@@ -47,11 +47,13 @@ class WalletManager:
     def __init__(self, gist_token: str = None, gist_id: str = None):
         self.gist_token = gist_token or os.getenv('GITHUB_GIST_TOKEN')
         self.gist_id = gist_id or os.getenv('GITHUB_GIST_ID')
-        self.wallets = self._load_wallets()
         
         # Gist 사용 불가시 로컬 파일 백업
         self.use_local = not (self.gist_token and self.gist_id)
         self.wallet_file = "wallets.json"
+        
+        # 지갑 데이터 로드
+        self.wallets = self._load_wallets()
     
     def _load_wallets(self) -> Dict[str, str]:
         """지갑 데이터 로드 (Gist 또는 로컬)"""
