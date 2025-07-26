@@ -22,11 +22,20 @@ from eth_account import Account
 load_dotenv()
 
 # 로깅 설정
+from logging.handlers import RotatingFileHandler
+
+# 로그 핸들러 설정
+log_handler = RotatingFileHandler(
+    'tx_bot.log',
+    maxBytes=10*1024*1024,  # 10MB
+    backupCount=5  # 최대 5개 백업 파일
+)
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('tx_bot.log'),
+        log_handler,
         logging.StreamHandler()
     ]
 )
@@ -414,8 +423,8 @@ class RBTCDropBot:
                 user_id = str(message.from_user.id)
                 user_name = f"@{message.from_user.username}" if message.from_user.username else message.from_user.first_name or "Unknown"
                 
-                # 디버깅: 모든 메시지 로깅
-                logging.info(f"메시지 수신 - 채팅 타입: {message.chat.type}, 채팅: {message.chat.title if hasattr(message.chat, 'title') else 'Private'}, 사용자: {user_name}, 메시지: {message.text[:50] if message.text else 'No text'}")
+                # 디버깅: 모든 메시지 로깅 (DEBUG 레벨로 변경)
+                logging.debug(f"메시지 수신 - 채팅: {message.chat.title if hasattr(message.chat, 'title') else 'Private'}, 사용자: {user_name}")
                 
                 # 메시지가 명령어인 경우 무시
                 if message.text and message.text.startswith('/'):
@@ -444,7 +453,7 @@ class RBTCDropBot:
     
     def process_message_drop(self, message, user_id: str, user_name: str):
         """메시지별 드랍 처리"""
-        logging.info(f"드랍 처리 시작 - 사용자: {user_name} ({user_id}), 채팅 타입: {message.chat.type}")
+        logging.debug(f"드랍 처리 시작 - 사용자: {user_name} ({user_id})")
         
         # 개인 채팅에서는 드랍 비활성화
         if message.chat.type == 'private':
@@ -480,7 +489,7 @@ class RBTCDropBot:
         
         # 랜덤 드랍 여부 결정
         if not (self.tx_manager and self.tx_manager.should_drop(self.drop_rate)):
-            logging.info(f"랜덤 드랍 실패 - 확률: {self.drop_rate*100}%")
+            # 드랍 실패는 로그하지 않음 (너무 많음)
             return  # 드랍 안함
         
         logging.info(f"🎉 드랍 당첨! 사용자: {user_name}, 지갑: {wallet_address[:10]}...")
@@ -539,7 +548,9 @@ class RBTCDropBot:
     
     def run(self):
         """봇 실행"""
-        logging.info("RBTC 드랍 봇 시작")
+        import uuid
+        instance_id = str(uuid.uuid4())[:8]
+        logging.info(f"RBTC 드랍 봇 시작 - Instance: {instance_id}")
         logging.info(f"드랍 확률: {self.drop_rate*100:.1f}%, 일일 한도: {self.max_daily_amount:.8f} RBTC")
         
         try:
