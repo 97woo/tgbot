@@ -17,6 +17,7 @@ import telebot
 from dotenv import load_dotenv
 from web3 import Web3
 from eth_account import Account
+import requests
 
 # 환경변수 로드
 load_dotenv()
@@ -41,33 +42,89 @@ logging.basicConfig(
 )
 
 class WalletManager:
-    """지갑 주소 관리 클래스"""
+    """GitHub Gist를 사용한 지갑 주소 관리 클래스"""
     
-    def __init__(self, wallet_file: str = "wallets.json"):
-        self.wallet_file = wallet_file
+    def __init__(self, gist_token: str = None, gist_id: str = None):
+        self.gist_token = gist_token or os.getenv('GITHUB_GIST_TOKEN')
+        self.gist_id = gist_id or os.getenv('GITHUB_GIST_ID')
         self.wallets = self._load_wallets()
+        
+        # Gist 사용 불가시 로컬 파일 백업
+        self.use_local = not (self.gist_token and self.gist_id)
+        self.wallet_file = "wallets.json"
     
-    """지갑 데이터 로드"""
     def _load_wallets(self) -> Dict[str, str]:
+        """지갑 데이터 로드 (Gist 또는 로컬)"""
+        if self.use_local:
+            try:
+                if os.path.exists(self.wallet_file):
+                    with open(self.wallet_file, 'r', encoding='utf-8') as f:
+                        return json.load(f)
+            except Exception as e:
+                logging.error(f"로컬 지갑 데이터 로드 실패: {e}")
+            return {}
         
+        # GitHub Gist에서 로드
         try:
-            if os.path.exists(self.wallet_file):
-                with open(self.wallet_file, 'r', encoding='utf-8') as f:
-                    return json.load(f)
-            return {}
+            headers = {
+                'Authorization': f'token {self.gist_token}',
+                'Accept': 'application/vnd.github.v3+json'
+            }
+            response = requests.get(
+                f'https://api.github.com/gists/{self.gist_id}',
+                headers=headers
+            )
+            
+            if response.status_code == 200:
+                gist_data = response.json()
+                if 'wallets.json' in gist_data['files']:
+                    content = gist_data['files']['wallets.json']['content']
+                    return json.loads(content)
+            else:
+                logging.error(f"Gist 로드 실패: {response.status_code}")
         except Exception as e:
-            logging.error(f"지갑 데이터 로드 실패: {e}")
-            return {}
+            logging.error(f"Gist 데이터 로드 실패: {e}")
+        
+        return {}
     
-    """지갑 데이터 저장"""
     def _save_wallets(self) -> bool:
+        """지갑 데이터 저장 (Gist 또는 로컬)"""
+        if self.use_local:
+            try:
+                with open(self.wallet_file, 'w', encoding='utf-8') as f:
+                    json.dump(self.wallets, f, indent=2, ensure_ascii=False)
+                return True
+            except Exception as e:
+                logging.error(f"로컬 지갑 데이터 저장 실패: {e}")
+                return False
         
+        # GitHub Gist에 저장
         try:
-            with open(self.wallet_file, 'w', encoding='utf-8') as f:
-                json.dump(self.wallets, f, indent=2, ensure_ascii=False)
-            return True
+            headers = {
+                'Authorization': f'token {self.gist_token}',
+                'Accept': 'application/vnd.github.v3+json'
+            }
+            data = {
+                'files': {
+                    'wallets.json': {
+                        'content': json.dumps(self.wallets, indent=2, ensure_ascii=False)
+                    }
+                }
+            }
+            response = requests.patch(
+                f'https://api.github.com/gists/{self.gist_id}',
+                headers=headers,
+                json=data
+            )
+            
+            if response.status_code == 200:
+                logging.info("Gist에 지갑 데이터 저장 성공")
+                return True
+            else:
+                logging.error(f"Gist 저장 실패: {response.status_code}")
+                return False
         except Exception as e:
-            logging.error(f"지갑 데이터 저장 실패: {e}")
+            logging.error(f"Gist 데이터 저장 실패: {e}")
             return False
     
     """지갑 주소 유효성 검사"""
@@ -275,6 +332,9 @@ class RBTCDropBot:
         
         # 핸들러 설정
         self.setup_handlers()
+        
+        # 봇 정보 저장
+        self.bot_info = self.bot.get_me()
     
     def setup_handlers(self):
         """메시지 핸들러 설정"""
@@ -415,6 +475,59 @@ class RBTCDropBot:
             """
             self.bot.reply_to(message, info_text)
         
+        
+        @self.bot.message_handler(content_types=['new_chat_members'])
+        def handle_new_member(message):
+            """봇이 새 그룹에 추가되었을 때"""
+            for new_member in message.new_chat_members:
+                if new_member.id == self.bot_info.id:
+                    # 봇이 새 그룹에 추가됨
+                    chat_title = message.chat.title or "Unknown"
+                    chat_id = message.chat.id
+                    inviter = f"@{message.from_user.username}" if message.from_user.username else message.from_user.first_name
+                    
+                    logging.info(f"🎉 봇이 새 그룹에 추가됨: {chat_title} (ID: {chat_id}) by {inviter}")
+                    
+                    # 관리자에게 알림 (ADMIN_USER_ID가 설정된 경우)
+                    if self.admin_user_id:
+                        try:
+                            admin_msg = f"""🤖 봇이 새 그룹에 추가되었습니다!
+                            
+📍 그룹: {chat_title}
+🆔 ID: {chat_id}
+👤 초대자: {inviter}
+🕐 시간: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"""
+                            self.bot.send_message(self.admin_user_id, admin_msg)
+                        except Exception as e:
+                            logging.error(f"관리자 알림 실패: {e}")
+                    
+                    # 새 그룹에 환영 메시지
+                    welcome_msg = """🎯 RSK RBTC 드랍 봇입니다!
+                    
+채팅하면 랜덤으로 RBTC를 드랍합니다.
+먼저 개인 채팅에서 /set 명령어로 지갑을 등록하세요!"""
+                    self.bot.send_message(chat_id, welcome_msg)
+        
+        @self.bot.message_handler(content_types=['left_chat_member'])
+        def handle_left_member(message):
+            """봇이 그룹에서 제거되었을 때"""
+            if message.left_chat_member.id == self.bot_info.id:
+                chat_title = message.chat.title or "Unknown"
+                chat_id = message.chat.id
+                
+                logging.info(f"😢 봇이 그룹에서 제거됨: {chat_title} (ID: {chat_id})")
+                
+                # 관리자에게 알림
+                if self.admin_user_id:
+                    try:
+                        admin_msg = f"""🤖 봇이 그룹에서 제거되었습니다.
+                        
+📍 그룹: {chat_title}
+🆔 ID: {chat_id}
+🕐 시간: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"""
+                        self.bot.send_message(self.admin_user_id, admin_msg)
+                    except:
+                        pass
         
         @self.bot.message_handler(func=lambda message: True)
         def handle_all_messages(message):
