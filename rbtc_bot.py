@@ -237,6 +237,7 @@ class RBTCDropBot:
         self.drop_rate = float(os.getenv('DROP_RATE', '0.05'))  # 5%
         self.max_daily_amount = float(os.getenv('MAX_DAILY_AMOUNT', '0.00003125'))  # 0.00003125 RBTC (~5000원 at 160M KRW/BTC)
         self.admin_user_id = os.getenv('ADMIN_USER_ID')
+        self.bot_wallet_address = os.getenv('BOT_WALLET_ADDRESS')
         
         
         if not self.bot_token:
@@ -401,6 +402,7 @@ class RBTCDropBot:
 ⏰ 전송 쿨타임: {int(self.cooldown_seconds)}초
 
 🌐 체인: Rootstock Network
+💳 봇 지갑: `{self.bot_wallet_address[:10]}...{self.bot_wallet_address[-8:]}`
             """
             self.bot.reply_to(message, info_text)
         
