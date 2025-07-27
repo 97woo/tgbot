@@ -12,7 +12,7 @@ import logging
 import random
 import re
 from datetime import datetime, timedelta
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 import telebot
 from dotenv import load_dotenv
 from web3 import Web3
@@ -167,6 +167,162 @@ class WalletManager:
     """모든 지갑 주소 조회"""
     def get_all_wallets(self) -> Dict[str, str]:
         return self.wallets.copy()
+    
+    def load_daily_sent(self) -> Dict[str, float]:
+        """Gist에서 일일 전송량 로드"""
+        if self.use_local:
+            try:
+                if os.path.exists('daily_sent.json'):
+                    with open('daily_sent.json', 'r') as f:
+                        return json.load(f)
+            except:
+                pass
+            return {}
+        
+        # Gist에서 로드
+        try:
+            headers = {
+                'Authorization': f'token {self.gist_token}',
+                'Accept': 'application/vnd.github.v3+json'
+            }
+            response = requests.get(
+                f'https://api.github.com/gists/{self.gist_id}',
+                headers=headers
+            )
+            
+            if response.status_code == 200:
+                gist_data = response.json()
+                if 'daily_sent.json' in gist_data['files']:
+                    content = gist_data['files']['daily_sent.json']['content']
+                    return json.loads(content)
+        except:
+            pass
+        
+        return {}
+    
+    def save_daily_sent(self, daily_sent: Dict[str, float]) -> bool:
+        """Gist에 일일 전송량 저장"""
+        if self.use_local:
+            try:
+                with open('daily_sent.json', 'w') as f:
+                    json.dump(daily_sent, f)
+                return True
+            except:
+                return False
+        
+        # Gist에 저장
+        try:
+            headers = {
+                'Authorization': f'token {self.gist_token}',
+                'Accept': 'application/vnd.github.v3+json'
+            }
+            
+            # 기존 Gist 내용 가져오기
+            response = requests.get(
+                f'https://api.github.com/gists/{self.gist_id}',
+                headers=headers
+            )
+            
+            if response.status_code == 200:
+                gist_data = response.json()
+                files = gist_data['files']
+                
+                # daily_sent.json 추가/업데이트
+                files['daily_sent.json'] = {
+                    'content': json.dumps(daily_sent, indent=2)
+                }
+                
+                # Gist 업데이트
+                update_data = {'files': files}
+                update_response = requests.patch(
+                    f'https://api.github.com/gists/{self.gist_id}',
+                    headers=headers,
+                    json=update_data
+                )
+                
+                return update_response.status_code == 200
+        except:
+            pass
+        
+        return False
+    
+    def load_limit_notifications(self) -> Dict[str, List[int]]:
+        """한도 도달 알림 기록 로드"""
+        if self.use_local:
+            try:
+                if os.path.exists('limit_notifications.json'):
+                    with open('limit_notifications.json', 'r') as f:
+                        return json.load(f)
+            except:
+                pass
+            return {}
+        
+        # Gist에서 로드
+        try:
+            headers = {
+                'Authorization': f'token {self.gist_token}',
+                'Accept': 'application/vnd.github.v3+json'
+            }
+            response = requests.get(
+                f'https://api.github.com/gists/{self.gist_id}',
+                headers=headers
+            )
+            
+            if response.status_code == 200:
+                gist_data = response.json()
+                if 'limit_notifications.json' in gist_data['files']:
+                    content = gist_data['files']['limit_notifications.json']['content']
+                    return json.loads(content)
+        except:
+            pass
+        
+        return {}
+    
+    def save_limit_notifications(self, notifications: Dict[str, List[int]]) -> bool:
+        """한도 도달 알림 기록 저장"""
+        if self.use_local:
+            try:
+                with open('limit_notifications.json', 'w') as f:
+                    json.dump(notifications, f)
+                return True
+            except:
+                return False
+        
+        # Gist에 저장
+        try:
+            headers = {
+                'Authorization': f'token {self.gist_token}',
+                'Accept': 'application/vnd.github.v3+json'
+            }
+            
+            # 기존 Gist 내용 가져오기
+            response = requests.get(
+                f'https://api.github.com/gists/{self.gist_id}',
+                headers=headers
+            )
+            
+            if response.status_code == 200:
+                gist_data = response.json()
+                files = gist_data['files']
+                
+                # limit_notifications.json 추가/업데이트
+                files['limit_notifications.json'] = {
+                    'content': json.dumps(notifications, indent=2)
+                }
+                
+                # Gist 업데이트
+                update_data = {'files': files}
+                update_response = requests.patch(
+                    f'https://api.github.com/gists/{self.gist_id}',
+                    headers=headers,
+                    json=update_data
+                )
+                
+                return update_response.status_code == 200
+        except:
+            pass
+        
+        return False
 
 class TransactionManager:
     """RSK 체인 트랜잭션 관리 클래스"""
@@ -325,8 +481,11 @@ class RBTCDropBot:
             self.tx_manager = None
             logging.warning("PRIVATE_KEY가 설정되지 않았습니다.")
         
-        # 일일 전송량 추적
-        self.daily_sent = {}
+        # 일일 전송량 추적 (Gist에서 로드)
+        self.daily_sent = self.wallet_manager.load_daily_sent()
+        
+        # 일일 한도 알림 기록 로드
+        self.limit_notifications = self.wallet_manager.load_limit_notifications()
         
         # [modify] 전송 쿨타임 관리 (새로 추가)
         self.last_transaction_time = {}  # [modify] 사용자별 마지막 전송 시간
@@ -599,12 +758,21 @@ class RBTCDropBot:
         today_sent = self.daily_sent.get(today, 0)
         
         if today_sent >= self.max_daily_amount:
-            # 오늘 처음으로 한도 도달시에만 알림
-            if not hasattr(self, 'daily_limit_notified') or self.daily_limit_notified != today:
-                self.daily_limit_notified = today
+            # 오늘 처음으로 한도 도달시에만 알림 (채팅방별로)
+            chat_id = message.chat.id
+            today_notifications = self.limit_notifications.get(today, [])
+            
+            if chat_id not in today_notifications:
+                # 이 채팅방에 오늘 알림을 보낸 적이 없음
                 limit_msg = "💸 오늘의 RBTC 드랍이 모두 소진되었습니다!\n내일 다시 찾아주세요~ 🌙"
-                self.bot.send_message(message.chat.id, limit_msg)
-                logging.info(f"일일 한도 도달 알림: {today_sent:.8f}/{self.max_daily_amount:.8f} RBTC")
+                self.bot.send_message(chat_id, limit_msg)
+                
+                # 알림 기록 저장
+                today_notifications.append(chat_id)
+                self.limit_notifications[today] = today_notifications
+                self.wallet_manager.save_limit_notifications(self.limit_notifications)
+                
+                logging.info(f"일일 한도 도달 알림: {today_sent:.8f}/{self.max_daily_amount:.8f} RBTC (채팅방: {chat_id})")
             return  # 일일 한도 초과
         
         # 랜덤 드랍 여부 결정
@@ -642,8 +810,9 @@ class RBTCDropBot:
                     time.sleep(2)  # 2초 대기 후 재시도
         
         if tx_hash:
-            # 일일 전송량 업데이트
+            # 일일 전송량 업데이트 및 저장
             self.daily_sent[today] = today_sent + drop_amount
+            self.wallet_manager.save_daily_sent(self.daily_sent)
             
             # [modify] 쿨타임 업데이트 (새로 추가)
             self.last_transaction_time[user_id] = now  # [modify]
