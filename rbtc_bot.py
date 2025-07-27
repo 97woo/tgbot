@@ -18,6 +18,7 @@ from dotenv import load_dotenv
 from web3 import Web3
 from eth_account import Account
 import requests
+import threading
 
 # 환경변수 로드
 load_dotenv()
@@ -40,6 +41,51 @@ logging.basicConfig(
         logging.StreamHandler()
     ]
 )
+
+class LastWinnerTracker:
+    """채팅방별 마지막 당첨자 추적 (간단한 라운드 로빈)"""
+    
+    def __init__(self):
+        self.last_winners = {}  # {chat_id: last_winner_user_id}
+        self.lock = threading.Lock()
+    
+    def can_receive_drop(self, chat_id: int, user_id: str, total_users: int = 4) -> bool:
+        """사용자가 드랍을 받을 수 있는지 확인
+        - 마지막 당첨자와 같으면 False
+        - 채팅방에 3명 이하면 항상 False (드랍 금지)
+        """
+        with self.lock:
+            # 채팅방에 사용자가 3명 이하면 드랍 금지
+            if total_users <= 3:
+                return False
+            
+            # 마지막 당첨자가 없으면 받을 수 있음
+            if chat_id not in self.last_winners:
+                return True
+            
+            # 마지막 당첨자와 다르면 받을 수 있음
+            return self.last_winners[chat_id] != user_id
+    
+    def update_winner(self, chat_id: int, user_id: str):
+        """당첨자 업데이트"""
+        with self.lock:
+            self.last_winners[chat_id] = user_id
+            logging.info(f"마지막 당첨자 업데이트 - 채팅방: {chat_id}, 사용자: {user_id}")
+    
+    def get_last_winner(self, chat_id: int) -> Optional[str]:
+        """마지막 당첨자 조회"""
+        with self.lock:
+            return self.last_winners.get(chat_id)
+    
+    def save_to_dict(self) -> Dict:
+        """Gist 저장용 딕셔너리로 변환"""
+        with self.lock:
+            return self.last_winners.copy()
+    
+    def load_from_dict(self, data: Dict):
+        """Gist에서 로드한 데이터 적용"""
+        with self.lock:
+            self.last_winners = data
 
 class WalletManager:
     """GitHub Gist를 사용한 지갑 주소 관리 클래스"""
@@ -323,6 +369,87 @@ class WalletManager:
             pass
         
         return False
+    
+    def load_last_winners(self) -> Dict[int, str]:
+        """Gist에서 마지막 당첨자 정보 로드"""
+        if self.use_local:
+            try:
+                if os.path.exists('last_winners.json'):
+                    with open('last_winners.json', 'r') as f:
+                        data = json.load(f)
+                        # 키를 int로 변환
+                        return {int(k): v for k, v in data.items()}
+            except:
+                pass
+            return {}
+        
+        # Gist에서 로드
+        try:
+            headers = {
+                'Authorization': f'token {self.gist_token}',
+                'Accept': 'application/vnd.github.v3+json'
+            }
+            response = requests.get(
+                f'https://api.github.com/gists/{self.gist_id}',
+                headers=headers
+            )
+            
+            if response.status_code == 200:
+                gist_data = response.json()
+                if 'last_winners.json' in gist_data['files']:
+                    content = gist_data['files']['last_winners.json']['content']
+                    data = json.loads(content) if content else {}
+                    # 키를 int로 변환
+                    return {int(k): v for k, v in data.items()}
+        except:
+            pass
+        
+        return {}
+    
+    def save_last_winners(self, last_winners: Dict[int, str]) -> bool:
+        """마지막 당첨자 정보 저장"""
+        if self.use_local:
+            try:
+                with open('last_winners.json', 'w') as f:
+                    json.dump(last_winners, f)
+                return True
+            except:
+                return False
+        
+        # Gist에 저장
+        try:
+            headers = {
+                'Authorization': f'token {self.gist_token}',
+                'Accept': 'application/vnd.github.v3+json'
+            }
+            
+            # 기존 Gist 내용 가져오기
+            response = requests.get(
+                f'https://api.github.com/gists/{self.gist_id}',
+                headers=headers
+            )
+            
+            files = {}
+            if response.status_code == 200:
+                gist_data = response.json()
+                # 기존 파일들 유지
+                for filename in ['wallets.json', 'daily_sent.json', 'limit_notifications.json', 'last_winners.json']:
+                    if filename in gist_data['files']:
+                        files[filename] = {'content': gist_data['files'][filename]['content']}
+            
+            # 마지막 당첨자 정보 업데이트
+            files['last_winners.json'] = {'content': json.dumps(last_winners, indent=2)}
+            
+            # Gist 업데이트
+            update_response = requests.patch(
+                f'https://api.github.com/gists/{self.gist_id}',
+                headers=headers,
+                json={'files': files}
+            )
+            
+            return update_response.status_code == 200
+        except:
+            return False
 
 class TransactionManager:
     """RSK 체인 트랜잭션 관리 클래스"""
@@ -490,6 +617,11 @@ class RBTCDropBot:
         # [modify] 전송 쿨타임 관리 (새로 추가)
         self.last_transaction_time = {}  # [modify] 사용자별 마지막 전송 시간
         self.cooldown_seconds = float(os.getenv('COOLDOWN_SECONDS', '60'))  # 기본 60초 쿨타임
+        
+        # 라운드 로빈 추적
+        self.last_winner_tracker = LastWinnerTracker()
+        last_winners_data = self.wallet_manager.load_last_winners()
+        self.last_winner_tracker.load_from_dict(last_winners_data)
         
         # 핸들러 설정
         self.setup_handlers()
@@ -753,6 +885,22 @@ class RBTCDropBot:
                 logging.info(f"쿨타임: {user_name} ({user_id}) - {self.cooldown_seconds - time_diff:.1f}초 남음")  # [modify]
                 return  # [modify] 쿨타임 중
         
+        # 채팅방 인원 체크 (3명 이하면 드랍 금지)
+        chat_id = message.chat.id
+        try:
+            chat_member_count = self.bot.get_chat_member_count(chat_id)
+            if chat_member_count <= 3:
+                logging.info(f"채팅방 인원 부족: {chat_member_count}명 (최소 4명 필요)")
+                return  # 3명 이하면 드랍 안함
+        except:
+            # 멤버 수를 가져올 수 없으면 그냥 진행
+            pass
+        
+        # 연속 당첨 방지 체크
+        if not self.last_winner_tracker.can_receive_drop(chat_id, user_id, total_users=chat_member_count):
+            logging.info(f"연속 당첨 방지: {user_name} ({user_id})는 마지막 당첨자")
+            return  # 마지막 당첨자는 못 받음
+        
         # 일일 한도 확인
         today = datetime.now().date().isoformat()
         today_sent = self.daily_sent.get(today, 0)
@@ -831,6 +979,10 @@ class RBTCDropBot:
             
             self.bot.reply_to(message, drop_text, parse_mode='Markdown', disable_web_page_preview=True)
             logging.info(f"드랍 성공: {user_name} ({user_id}) -> {drop_amount:.8f} RBTC (쿨타임 {self.cooldown_seconds}초 시작)")  # [modify]
+            
+            # 라운드 로빈 업데이트
+            self.last_winner_tracker.update_winner(chat_id, user_id)
+            self.wallet_manager.save_last_winners(self.last_winner_tracker.save_to_dict())
         else:
             # 모든 재시도 실패시 로그만 남김
             logging.error(f"드랍 전송 완전 실패: {user_name} ({user_id}) - 모든 재시도 소진")
