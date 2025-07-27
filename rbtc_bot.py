@@ -406,6 +406,83 @@ class WalletManager:
         
         return {}
     
+    def load_blacklist(self) -> List[str]:
+        """Gist에서 블랙리스트 로드"""
+        if self.use_local:
+            try:
+                if os.path.exists('blacklist.json'):
+                    with open('blacklist.json', 'r') as f:
+                        return json.load(f)
+            except:
+                pass
+            return []
+        
+        # Gist에서 로드
+        try:
+            headers = {
+                'Authorization': f'token {self.gist_token}',
+                'Accept': 'application/vnd.github.v3+json'
+            }
+            response = requests.get(
+                f'https://api.github.com/gists/{self.gist_id}',
+                headers=headers
+            )
+            
+            if response.status_code == 200:
+                gist_data = response.json()
+                if 'blacklist.json' in gist_data['files']:
+                    content = gist_data['files']['blacklist.json']['content']
+                    return json.loads(content) if content else []
+        except:
+            pass
+        
+        return []
+    
+    def save_blacklist(self, blacklist: List[str]) -> bool:
+        """블랙리스트 저장"""
+        if self.use_local:
+            try:
+                with open('blacklist.json', 'w') as f:
+                    json.dump(blacklist, f)
+                return True
+            except:
+                return False
+        
+        # Gist에 저장
+        try:
+            headers = {
+                'Authorization': f'token {self.gist_token}',
+                'Accept': 'application/vnd.github.v3+json'
+            }
+            
+            # 기존 Gist 내용 가져오기
+            response = requests.get(
+                f'https://api.github.com/gists/{self.gist_id}',
+                headers=headers
+            )
+            
+            files = {}
+            if response.status_code == 200:
+                gist_data = response.json()
+                # 기존 파일들 유지
+                for filename in ['wallets.json', 'daily_sent.json', 'limit_notifications.json', 'last_winners.json', 'blacklist.json']:
+                    if filename in gist_data['files']:
+                        files[filename] = {'content': gist_data['files'][filename]['content']}
+            
+            # 블랙리스트 업데이트
+            files['blacklist.json'] = {'content': json.dumps(blacklist, indent=2)}
+            
+            # Gist 업데이트
+            update_response = requests.patch(
+                f'https://api.github.com/gists/{self.gist_id}',
+                headers=headers,
+                json={'files': files}
+            )
+            
+            return update_response.status_code == 200
+        except:
+            return False
+    
     def save_last_winners(self, last_winners: Dict[int, str]) -> bool:
         """마지막 당첨자 정보 저장"""
         if self.use_local:
@@ -623,6 +700,10 @@ class RBTCDropBot:
         last_winners_data = self.wallet_manager.load_last_winners()
         self.last_winner_tracker.load_from_dict(last_winners_data)
         
+        # 블랙리스트 로드
+        self.blacklist = self.wallet_manager.load_blacklist()
+        logging.info(f"블랙리스트 로드: {len(self.blacklist)}명")
+        
         # 핸들러 설정
         self.setup_handlers()
         
@@ -768,6 +849,72 @@ class RBTCDropBot:
             """
             self.bot.reply_to(message, info_text)
         
+        @self.bot.message_handler(commands=['blacklist'])
+        def handle_blacklist(message):
+            """블랙리스트 관리 (관리자 전용)"""
+            # 관리자 확인
+            if str(message.from_user.id) != self.admin_user_id:
+                self.bot.reply_to(message, "❌ 관리자만 사용할 수 있는 명령어입니다.")
+                return
+            
+            parts = message.text.split()
+            if len(parts) < 2:
+                help_text = """
+🚫 블랙리스트 관리:
+
+/blacklist add @username 또는 user_id - 추가
+/blacklist remove @username 또는 user_id - 제거
+/blacklist list - 목록 보기
+                """
+                self.bot.reply_to(message, help_text)
+                return
+            
+            action = parts[1].lower()
+            
+            if action == 'list':
+                if not self.blacklist:
+                    self.bot.reply_to(message, "📋 블랙리스트가 비어있습니다.")
+                else:
+                    list_text = "🚫 블랙리스트:\n\n"
+                    for user_id in self.blacklist:
+                        list_text += f"• {user_id}\n"
+                    self.bot.reply_to(message, list_text)
+            
+            elif action in ['add', 'remove'] and len(parts) >= 3:
+                target = parts[2]
+                
+                # @username 형식 처리
+                if target.startswith('@'):
+                    self.bot.reply_to(message, "❌ 사용자 ID를 직접 입력해주세요. (예: 123456789)")
+                    return
+                
+                # user_id 검증
+                try:
+                    user_id = str(int(target))  # 숫자인지 확인
+                except:
+                    self.bot.reply_to(message, "❌ 올바른 사용자 ID를 입력해주세요.")
+                    return
+                
+                if action == 'add':
+                    if user_id not in self.blacklist:
+                        self.blacklist.append(user_id)
+                        self.wallet_manager.save_blacklist(self.blacklist)
+                        self.bot.reply_to(message, f"✅ {user_id}를 블랙리스트에 추가했습니다.")
+                        logging.info(f"블랙리스트 추가: {user_id} by {message.from_user.id}")
+                    else:
+                        self.bot.reply_to(message, f"⚠️ {user_id}는 이미 블랙리스트에 있습니다.")
+                
+                elif action == 'remove':
+                    if user_id in self.blacklist:
+                        self.blacklist.remove(user_id)
+                        self.wallet_manager.save_blacklist(self.blacklist)
+                        self.bot.reply_to(message, f"✅ {user_id}를 블랙리스트에서 제거했습니다.")
+                        logging.info(f"블랙리스트 제거: {user_id} by {message.from_user.id}")
+                    else:
+                        self.bot.reply_to(message, f"⚠️ {user_id}는 블랙리스트에 없습니다.")
+            else:
+                self.bot.reply_to(message, "❌ 잘못된 명령어 형식입니다. /blacklist 를 입력해 도움말을 확인하세요.")
+        
         
         @self.bot.message_handler(content_types=['new_chat_members'])
         def handle_new_member(message):
@@ -860,6 +1007,11 @@ class RBTCDropBot:
     def process_message_drop(self, message, user_id: str, user_name: str):
         """메시지별 드랍 처리"""
         logging.debug(f"드랍 처리 시작 - 사용자: {user_name} ({user_id})")
+        
+        # 블랙리스트 체크 (가장 먼저!)
+        if user_id in self.blacklist:
+            logging.info(f"블랙리스트 사용자: {user_name} ({user_id})")
+            return  # 블랙리스트 사용자는 드랍 불가
         
         # 개인 채팅에서는 드랍 비활성화
         if message.chat.type == 'private':
