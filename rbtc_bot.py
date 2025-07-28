@@ -152,24 +152,36 @@ class WalletManager:
                 'Authorization': f'token {self.gist_token}',
                 'Accept': 'application/vnd.github.v3+json'
             }
-            data = {
-                'files': {
-                    'wallets.json': {
-                        'content': json.dumps(self.wallets, indent=2, ensure_ascii=False)
-                    }
-                }
-            }
-            response = requests.patch(
+            
+            # 기존 Gist 내용 가져오기
+            response = requests.get(
                 f'https://api.github.com/gists/{self.gist_id}',
-                headers=headers,
-                json=data
+                headers=headers
             )
             
+            files = {}
             if response.status_code == 200:
+                gist_data = response.json()
+                # 기존 파일들 유지
+                for filename in ['wallets.json', 'daily_sent.json', 'limit_notifications.json', 'last_winners.json', 'blacklist.json']:
+                    if filename in gist_data['files']:
+                        files[filename] = {'content': gist_data['files'][filename]['content']}
+            
+            # wallets.json 업데이트
+            files['wallets.json'] = {'content': json.dumps(self.wallets, indent=2, ensure_ascii=False)}
+            
+            # Gist 업데이트
+            update_response = requests.patch(
+                f'https://api.github.com/gists/{self.gist_id}',
+                headers=headers,
+                json={'files': files}
+            )
+            
+            if update_response.status_code == 200:
                 logging.info("Gist에 지갑 데이터 저장 성공")
                 return True
             else:
-                logging.error(f"Gist 저장 실패: {response.status_code}")
+                logging.error(f"Gist 저장 실패: {update_response.status_code}")
                 return False
         except Exception as e:
             logging.error(f"Gist 데이터 저장 실패: {e}")
