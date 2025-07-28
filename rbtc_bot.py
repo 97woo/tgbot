@@ -722,6 +722,15 @@ class RBTCDropBot:
         # 봇 정보 저장
         self.bot_info = self.bot.get_me()
     
+    def get_today_key(self) -> str:
+        """오전 9시 기준으로 오늘 날짜 키 반환"""
+        now = datetime.now()
+        if now.hour < 9:
+            # 오전 9시 이전이면 전날로 계산
+            return (now - timedelta(days=1)).date().isoformat()
+        else:
+            return now.date().isoformat()
+    
     def setup_handlers(self):
         """메시지 핸들러 설정"""
         
@@ -844,13 +853,7 @@ class RBTCDropBot:
         @self.bot.message_handler(commands=['info'])
         def handle_info(message):
             """봇 정보 및 설정"""
-            # 오전 9시 기준으로 날짜 계산
-            now = datetime.now()
-            if now.hour < 9:
-                # 오전 9시 이전이면 전날로 계산
-                today = (now - timedelta(days=1)).date().isoformat()
-            else:
-                today = now.date().isoformat()
+            today = self.get_today_key()
             today_sent = self.daily_sent.get(today, 0)
             
             info_text = f"""
@@ -1072,12 +1075,7 @@ class RBTCDropBot:
             return  # 마지막 당첨자는 못 받음
         
         # 일일 한도 확인 (오전 9시 기준)
-        now = datetime.now()
-        if now.hour < 9:
-            # 오전 9시 이전이면 전날로 계산
-            today = (now - timedelta(days=1)).date().isoformat()
-        else:
-            today = now.date().isoformat()
+        today = self.get_today_key()
         today_sent = self.daily_sent.get(today, 0)
         
         if today_sent >= self.max_daily_amount:
