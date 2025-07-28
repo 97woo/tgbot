@@ -844,7 +844,13 @@ class RBTCDropBot:
         @self.bot.message_handler(commands=['info'])
         def handle_info(message):
             """봇 정보 및 설정"""
-            today = datetime.now().date().isoformat()
+            # 오전 9시 기준으로 날짜 계산
+            now = datetime.now()
+            if now.hour < 9:
+                # 오전 9시 이전이면 전날로 계산
+                today = (now - timedelta(days=1)).date().isoformat()
+            else:
+                today = now.date().isoformat()
             today_sent = self.daily_sent.get(today, 0)
             
             info_text = f"""
@@ -1065,8 +1071,13 @@ class RBTCDropBot:
             logging.info(f"연속 당첨 방지: {user_name} ({user_id})는 마지막 당첨자")
             return  # 마지막 당첨자는 못 받음
         
-        # 일일 한도 확인
-        today = datetime.now().date().isoformat()
+        # 일일 한도 확인 (오전 9시 기준)
+        now = datetime.now()
+        if now.hour < 9:
+            # 오전 9시 이전이면 전날로 계산
+            today = (now - timedelta(days=1)).date().isoformat()
+        else:
+            today = now.date().isoformat()
         today_sent = self.daily_sent.get(today, 0)
         
         if today_sent >= self.max_daily_amount:
