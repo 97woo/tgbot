@@ -34,13 +34,18 @@ log_handler = RotatingFileHandler(
 )
 
 logging.basicConfig(
-    level=logging.DEBUG,  # 디버그 레벨로 변경
+    level=logging.INFO,  # INFO 레벨로 복원
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         log_handler,
         logging.StreamHandler()
     ]
 )
+
+# urllib3 로그 비활성화
+logging.getLogger('urllib3').setLevel(logging.WARNING)
+# telebot 로그 레벨 조정
+logging.getLogger('TeleBot').setLevel(logging.WARNING)
 
 class LastWinnerTracker:
     """채팅방별 마지막 당첨자 추적 (간단한 라운드 로빈)"""
@@ -1135,8 +1140,8 @@ class RBTCDropBot:
                 user_id = str(message.from_user.id)
                 user_name = f"@{message.from_user.username}" if message.from_user.username else message.from_user.first_name or "Unknown"
                 
-                # 디버깅: 모든 메시지 로깅 (DEBUG 레벨로 변경)
-                logging.debug(f"메시지 수신 - 채팅: {message.chat.title if hasattr(message.chat, 'title') else 'Private'}, 사용자: {user_name}")
+                # 메시지 수신 로깅
+                logging.info(f"메시지 수신 - 채팅: {message.chat.title if hasattr(message.chat, 'title') else 'Private'}, 사용자: {user_name}")
                 
                 # 메시지가 명령어인 경우 무시
                 if message.text and message.text.startswith('/'):
@@ -1165,7 +1170,7 @@ class RBTCDropBot:
     
     def process_message_drop(self, message, user_id: str, user_name: str):
         """메시지별 드랍 처리"""
-        logging.debug(f"드랍 처리 시작 - 사용자: {user_name} ({user_id})")
+        logging.info(f"드랍 처리 시작 - 사용자: {user_name} ({user_id})")
         
         # 블랙리스트 체크 (가장 먼저!)
         if user_id in self.blacklist:
@@ -1242,7 +1247,7 @@ class RBTCDropBot:
             return
         
         if not self.tx_manager.should_drop(self.drop_rate):
-            logging.debug(f"드랍 확률 실패: {self.drop_rate*100}% (사용자: {user_name})")
+            # 20% 확률이므로 5번 중 1번만 당첨
             return  # 드랍 안함
         
         logging.info(f"🎉 드랍 당첨! 사용자: {user_name}, 지갑: {wallet_address[:10]}...")
