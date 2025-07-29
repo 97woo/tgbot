@@ -34,7 +34,7 @@ log_handler = RotatingFileHandler(
 )
 
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,  # 디버그 레벨로 변경
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         log_handler,
@@ -802,6 +802,16 @@ class RBTCDropBot:
         
         # 봇 정보 저장
         self.bot_info = self.bot.get_me()
+        
+        # 설정 출력
+        logging.info(f"=== 봇 설정 ===")
+        logging.info(f"드랍 확률: {self.drop_rate*100}%")
+        logging.info(f"일일 한도: {self.max_daily_amount} RBTC")
+        logging.info(f"쿨타임: {self.cooldown_seconds}초")
+        logging.info(f"RSK RPC: {self.base_rpc}")
+        logging.info(f"봇 지갑: {self.bot_wallet_address[:10]}...{self.bot_wallet_address[-8:] if self.bot_wallet_address else 'None'}")
+        logging.info(f"TX Manager: {'활성화' if self.tx_manager else '비활성화'}")
+        logging.info(f"================")
     
     def get_today_key(self) -> str:
         """오전 9시 기준으로 오늘 날짜 키 반환"""
@@ -1227,8 +1237,12 @@ class RBTCDropBot:
             return  # 일일 한도 초과
         
         # 랜덤 드랍 여부 결정
-        if not (self.tx_manager and self.tx_manager.should_drop(self.drop_rate)):
-            # 드랍 실패는 로그하지 않음 (너무 많음)
+        if not self.tx_manager:
+            logging.error("TransactionManager가 초기화되지 않았습니다. PRIVATE_KEY를 확인하세요.")
+            return
+        
+        if not self.tx_manager.should_drop(self.drop_rate):
+            logging.debug(f"드랍 확률 실패: {self.drop_rate*100}% (사용자: {user_name})")
             return  # 드랍 안함
         
         logging.info(f"🎉 드랍 당첨! 사용자: {user_name}, 지갑: {wallet_address[:10]}...")
