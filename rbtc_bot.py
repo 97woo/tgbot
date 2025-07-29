@@ -450,6 +450,83 @@ class WalletManager:
         
         return []
     
+    def load_drop_history(self) -> List[Dict]:
+        """Gist에서 드랍 이력 로드"""
+        if self.use_local:
+            try:
+                if os.path.exists('drop_history.json'):
+                    with open('drop_history.json', 'r') as f:
+                        return json.load(f)
+            except:
+                pass
+            return []
+        
+        # Gist에서 로드
+        try:
+            headers = {
+                'Authorization': f'token {self.gist_token}',
+                'Accept': 'application/vnd.github.v3+json'
+            }
+            response = requests.get(
+                f'https://api.github.com/gists/{self.gist_id}',
+                headers=headers
+            )
+            
+            if response.status_code == 200:
+                gist_data = response.json()
+                if 'drop_history.json' in gist_data['files']:
+                    content = gist_data['files']['drop_history.json']['content']
+                    return json.loads(content) if content else []
+        except:
+            pass
+        
+        return []
+    
+    def save_drop_history(self, history: List[Dict]) -> bool:
+        """드랍 이력 저장"""
+        if self.use_local:
+            try:
+                with open('drop_history.json', 'w') as f:
+                    json.dump(history, f, indent=2, ensure_ascii=False)
+                return True
+            except:
+                return False
+        
+        # Gist에 저장
+        try:
+            headers = {
+                'Authorization': f'token {self.gist_token}',
+                'Accept': 'application/vnd.github.v3+json'
+            }
+            
+            # 기존 Gist 내용 가져오기
+            response = requests.get(
+                f'https://api.github.com/gists/{self.gist_id}',
+                headers=headers
+            )
+            
+            files = {}
+            if response.status_code == 200:
+                gist_data = response.json()
+                # 기존 파일들 유지
+                for filename in ['wallets.json', 'daily_sent.json', 'limit_notifications.json', 'last_winners.json', 'blacklist.json', 'drop_history.json']:
+                    if filename in gist_data['files']:
+                        files[filename] = {'content': gist_data['files'][filename]['content']}
+            
+            # 드랍 이력 업데이트
+            files['drop_history.json'] = {'content': json.dumps(history, indent=2, ensure_ascii=False)}
+            
+            # Gist 업데이트
+            update_response = requests.patch(
+                f'https://api.github.com/gists/{self.gist_id}',
+                headers=headers,
+                json={'files': files}
+            )
+            
+            return update_response.status_code == 200
+        except:
+            return False
+    
     def save_blacklist(self, blacklist: List[str]) -> bool:
         """블랙리스트 저장"""
         if self.use_local:
@@ -716,6 +793,10 @@ class RBTCDropBot:
         self.blacklist = self.wallet_manager.load_blacklist()
         logging.info(f"블랙리스트 로드: {len(self.blacklist)}명")
         
+        # 드랍 이력 로드
+        self.drop_history = self.wallet_manager.load_drop_history()
+        logging.info(f"드랍 이력 로드: {len(self.drop_history)}건")
+        
         # 핸들러 설정
         self.setup_handlers()
         
@@ -869,6 +950,53 @@ class RBTCDropBot:
 💳 봇 지갑: `{self.bot_wallet_address[:10]}...{self.bot_wallet_address[-8:]}`
             """
             self.bot.reply_to(message, info_text)
+        
+        @self.bot.message_handler(commands=['stats'])
+        def handle_stats(message):
+            """드랍 통계 (관리자 전용)"""
+            # 관리자 확인
+            if str(message.from_user.id) != self.admin_user_id:
+                self.bot.reply_to(message, "❌ 관리자만 사용할 수 있는 명령어입니다.")
+                return
+            
+            if not self.drop_history:
+                self.bot.reply_to(message, "📊 아직 드랍 이력이 없습니다.")
+                return
+            
+            # 통계 계산
+            total_drops = len(self.drop_history)
+            total_amount = sum(record['amount_rbtc'] for record in self.drop_history)
+            
+            # 사용자별 통계
+            user_stats = {}
+            for record in self.drop_history:
+                user_id = record['telegram_id']
+                username = record['telegram_username']
+                if user_id not in user_stats:
+                    user_stats[user_id] = {
+                        'username': username,
+                        'count': 0,
+                        'total': 0,
+                        'wallet': record['wallet_address']
+                    }
+                user_stats[user_id]['count'] += 1
+                user_stats[user_id]['total'] += record['amount_rbtc']
+            
+            # 상위 10명
+            top_users = sorted(user_stats.items(), key=lambda x: x[1]['total'], reverse=True)[:10]
+            
+            stats_text = f"""📊 드랍 통계
+            
+총 드랍 횟수: {total_drops}회
+총 지급 RBTC: {total_amount:.8f}
+총 참여자 수: {len(user_stats)}명
+
+🏆 TOP 10 사용자:
+"""
+            for i, (user_id, stats) in enumerate(top_users, 1):
+                stats_text += f"{i}. {stats['username']} - {stats['count']}회, {stats['total']:.8f} RBTC\n"
+            
+            self.bot.reply_to(message, stats_text)
         
         @self.bot.message_handler(commands=['blacklist'])
         def handle_blacklist(message):
@@ -1156,6 +1284,19 @@ class RBTCDropBot:
             # 라운드 로빈 업데이트
             self.last_winner_tracker.update_winner(chat_id, user_id)
             self.wallet_manager.save_last_winners(self.last_winner_tracker.save_to_dict())
+            
+            # 드랍 이력 기록
+            drop_record = {
+                "wallet_address": wallet_address,
+                "amount_rbtc": drop_amount,
+                "timestamp": datetime.now().strftime('%Y-%m-%d %H:%M:%S KST'),
+                "telegram_id": user_id,
+                "telegram_username": user_name,
+                "tx_hash": tx_hash,
+                "chat_id": chat_id
+            }
+            self.drop_history.append(drop_record)
+            self.wallet_manager.save_drop_history(self.drop_history)
         else:
             # 모든 재시도 실패시 로그만 남김
             logging.error(f"드랍 전송 완전 실패: {user_name} ({user_id}) - 모든 재시도 소진")
