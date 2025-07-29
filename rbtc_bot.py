@@ -1188,13 +1188,15 @@ class RBTCDropBot:
         
         # 채팅방 인원 체크 (3명 이하면 드랍 금지)
         chat_id = message.chat.id
+        chat_member_count = 4  # 기본값 (멤버 수를 가져올 수 없을 때)
         try:
             chat_member_count = self.bot.get_chat_member_count(chat_id)
             if chat_member_count <= 3:
                 logging.info(f"채팅방 인원 부족: {chat_member_count}명 (최소 4명 필요)")
                 return  # 3명 이하면 드랍 안함
         except:
-            # 멤버 수를 가져올 수 없으면 그냥 진행
+            # 멤버 수를 가져올 수 없으면 기본값(4) 사용
+            logging.debug(f"채팅방 멤버 수 조회 실패, 기본값 사용: {chat_member_count}")
             pass
         
         # 연속 당첨 방지 체크
