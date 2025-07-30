@@ -11,6 +11,7 @@ import json
 import logging
 import random
 import re
+import time
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, List
 import telebot
@@ -1330,14 +1331,26 @@ class RBTCDropBot:
         logging.info(f"RBTC 드랍 봇 시작 - Instance: {instance_id}")
         logging.info(f"드랍 확률: {self.drop_rate*100:.1f}%, 일일 한도: {self.max_daily_amount:.8f} RBTC")
         
-        while True:
+        # 초기 대기 (이전 인스턴스 종료 대기)
+        logging.info("초기화 대기 중...")
+        time.sleep(3)
+        
+        retry_count = 0
+        while retry_count < 10:
             try:
-                logging.info("봇 폴링 시작...")
+                logging.info(f"봇 폴링 시작... (시도: {retry_count + 1})")
                 self.bot.infinity_polling(timeout=10, long_polling_timeout=5, skip_pending=True)
+                break  # 정상 종료시 루프 탈출
             except Exception as e:
-                logging.error(f"봇 실행 오류: {e}")
-                logging.info("5초 후 재시작...")
-                time.sleep(5)
+                retry_count += 1
+                logging.error(f"봇 실행 오류 (시도 {retry_count}/10): {e}")
+                if retry_count < 10:
+                    wait_time = min(retry_count * 5, 30)  # 최대 30초까지 대기
+                    logging.info(f"{wait_time}초 후 재시작...")
+                    time.sleep(wait_time)
+                else:
+                    logging.error("최대 재시도 횟수 초과. 봇 종료.")
+                    break
         
         logging.info("RBTC 드랍 봇 종료")
     
