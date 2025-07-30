@@ -1174,84 +1174,86 @@ class RBTCDropBot:
         
         return None
     
-    def process_message_drop(self, message, user_id: str, user_name: str):
-        """메시지별 드랍 처리"""
-        try:
-            logging.info(f"드랍 처리 시작 - 사용자: {user_name} ({user_id})")
-        
-        # 블랙리스트 체크 (가장 먼저!)
-        logging.info(f"블랙리스트 체크 - user_id: {user_id} (type: {type(user_id)})")
-        logging.info(f"블랙리스트 내용: {self.blacklist} (type: {type(self.blacklist)})")
-        
-        # 블랙리스트가 None이거나 빈 경우 처리
+    def _check_blacklist(self, user_id: str, user_name: str) -> bool:
+        """블랙리스트 체크
+        Returns: True if user can receive drop, False if blacklisted
+        """
         if self.blacklist is None:
             self.blacklist = []
-            logging.warning("블랙리스트가 None이어서 빈 리스트로 초기화")
         
-        # 블랙리스트 체크
         if user_id in self.blacklist:
             logging.info(f"블랙리스트 사용자: {user_name} ({user_id})")
-            return  # 블랙리스트 사용자는 드랍 불가
-        
-        logging.info(f"블랙리스트 통과: {user_name} ({user_id})")
-        
-        # 개인 채팅에서는 드랍 비활성화
-        logging.info(f"채팅 타입 체크: {message.chat.type}")
+            return False
+        return True
+    
+    def _check_chat_type(self, message) -> bool:
+        """채팅 타입 체크
+        Returns: True if group chat, False if private
+        """
         if message.chat.type == 'private':
             logging.info(f"개인 채팅에서는 드랍이 비활성화됨")
-            return
-        logging.info(f"그룹 채팅 확인됨")
-        
-        # [modify] 메시지 길이 체크 (5글자 이상)
-        logging.info(f"메시지 길이 체크: '{message.text}' ({len(message.text) if message.text else 0}글자)")
+            return False
+        return True
+    
+    def _check_message_length(self, message) -> bool:
+        """메시지 길이 체크
+        Returns: True if message is long enough, False otherwise
+        """
         if not message.text or len(message.text) < 5:
-            logging.info(f"메시지 길이 부족: {len(message.text) if message.text else 0}글자 (최소 5글자)")
-            return  # 5글자 미만시 드랍 없음
-        logging.info(f"메시지 길이 통과")
-        
-        # 지갑이 등록되어 있는지 확인
-        logging.info(f"지갑 등록 확인 중...")
+            logging.info(f"메시지 길이 부족: {len(message.text) if message.text else 0}글자")
+            return False
+        return True
+    
+    def _check_wallet_registration(self, user_id: str, user_name: str) -> Optional[str]:
+        """지갑 등록 체크
+        Returns: wallet address if registered, None otherwise
+        """
         wallet_address = self.wallet_manager.get_wallet(user_id)
         if not wallet_address:
             logging.info(f"지갑 미등록 사용자: {user_name}")
-            return  # 지갑 미등록시 드랍 없음
-        logging.info(f"지갑 등록 확인: {wallet_address[:10]}...")
-        
-        # [modify] 쿨타임 체크 (새로 추가)
-        logging.info(f"쿨타임 체크 시작")
-        now = datetime.now()  # [modify]
-        last_tx_time = self.last_transaction_time.get(user_id)  # [modify]
-        logging.info(f"마지막 거래 시간: {last_tx_time}, 현재 시간: {now}")
-        if last_tx_time:  # [modify]
-            time_diff = (now - last_tx_time).total_seconds()  # [modify]
-            logging.info(f"시간 차이: {time_diff}초, 쿨타임: {self.cooldown_seconds}초")
-            if time_diff < self.cooldown_seconds:  # [modify]
-                logging.info(f"쿨타임: {user_name} ({user_id}) - {self.cooldown_seconds - time_diff:.1f}초 남음")  # [modify]
-                return  # [modify] 쿨타임 중
-        logging.info(f"쿨타임 통과")
-        
-        # 채팅방 인원 체크 (3명 이하면 드랍 금지)
-        logging.info(f"채팅방 인원 체크 시작")
+            return None
+        return wallet_address
+    
+    def _check_cooldown(self, user_id: str, user_name: str) -> bool:
+        """쿨타임 체크
+        Returns: True if cooldown passed, False otherwise
+        """
+        now = datetime.now()
+        last_tx_time = self.last_transaction_time.get(user_id)
+        if last_tx_time:
+            time_diff = (now - last_tx_time).total_seconds()
+            if time_diff < self.cooldown_seconds:
+                logging.info(f"쿨타임: {user_name} ({user_id}) - {self.cooldown_seconds - time_diff:.1f}초 남음")
+                return False
+        return True
+    
+    def _check_chat_members(self, message) -> tuple[int, int]:
+        """채팅방 인원 체크
+        Returns: (chat_id, member_count)
+        """
         chat_id = message.chat.id
-        chat_member_count = 4  # 기본값 (멤버 수를 가져올 수 없을 때)
+        chat_member_count = 4  # 기본값
         try:
             chat_member_count = self.bot.get_chat_member_count(chat_id)
-            logging.info(f"채팅방 인원: {chat_member_count}명")
             if chat_member_count <= 3:
-                logging.info(f"채팅방 인원 부족: {chat_member_count}명 (최소 4명 필요)")
-                return  # 3명 이하면 드랍 안함
-        except Exception as e:
-            # 멤버 수를 가져올 수 없으면 기본값(4) 사용
-            logging.info(f"채팅방 멤버 수 조회 실패 ({e}), 기본값 사용: {chat_member_count}")
+                logging.info(f"채팅방 인원 부족: {chat_member_count}명")
+        except:
             pass
-        logging.info(f"채팅방 인원 체크 통과")
-        
-        # 연속 당첨 방지 체크
+        return chat_id, chat_member_count
+    
+    def _check_consecutive_winner(self, chat_id: int, user_id: str, user_name: str, chat_member_count: int) -> bool:
+        """연속 당첨 방지 체크
+        Returns: True if user can receive drop, False otherwise
+        """
         if not self.last_winner_tracker.can_receive_drop(chat_id, user_id, total_users=chat_member_count):
             logging.info(f"연속 당첨 방지: {user_name} ({user_id})는 마지막 당첨자")
-            return  # 마지막 당첨자는 못 받음
-        
-        # 일일 한도 확인 (오전 9시 기준)
+            return False
+        return True
+    
+    def _check_daily_limit(self, chat_id: int) -> tuple[str, float, bool]:
+        """일일 한도 체크
+        Returns: (today_key, today_sent, can_drop)
+        """
         today = self.get_today_key()
         today_sent = self.daily_sent.get(today, 0)
         
@@ -1260,47 +1262,38 @@ class RBTCDropBot:
             today_notifications = self.limit_notifications.get(today, [])
             
             if chat_id not in today_notifications:
-                # 이 채팅방에 오늘 알림을 보낸 적이 없음
                 limit_msg = "💸 오늘의 RBTC 드랍이 모두 소진되었습니다!\n내일 다시 찾아주세요~ 🌙"
                 self.bot.send_message(chat_id, limit_msg)
                 
-                # 알림 기록 저장
                 today_notifications.append(chat_id)
                 self.limit_notifications[today] = today_notifications
                 self.wallet_manager.save_limit_notifications(self.limit_notifications)
                 
-                logging.info(f"일일 한도 도달 알림: {today_sent:.8f}/{self.max_daily_amount:.8f} RBTC (채팅방: {chat_id})")
-            return  # 일일 한도 초과
+                logging.info(f"일일 한도 도달 알림: {today_sent:.8f}/{self.max_daily_amount:.8f} RBTC")
+            return today, today_sent, False
         
-        # 랜덤 드랍 여부 결정
-        if not self.tx_manager:
-            logging.error("TransactionManager가 초기화되지 않았습니다. PRIVATE_KEY를 확인하세요.")
-            return
-        
-        if not self.tx_manager.should_drop(self.drop_rate):
-            # 20% 확률이므로 5번 중 1번만 당첨
-            return  # 드랍 안함
-        
-        logging.info(f"🎉 드랍 당첨! 사용자: {user_name}, 지갑: {wallet_address[:10]}...")
-        
-        # 드랍 금액 (가스비 고려한 적정 금액)
-        drop_amount = 0.0000025  # 고정 금액: 0.0000025 RBTC (~400원)
+        return today, today_sent, True
+    
+    def _execute_drop(self, message, user_id: str, user_name: str, wallet_address: str, 
+                      chat_id: int, today: str, today_sent: float) -> bool:
+        """드랍 실행
+        Returns: True if drop successful, False otherwise
+        """
+        # 드랍 금액
+        drop_amount = 0.0000025  # 고정 금액: 0.0000025 RBTC
         
         # 일일 한도 체크
         if today_sent + drop_amount > self.max_daily_amount:
             drop_amount = self.max_daily_amount - today_sent
             if drop_amount < 0.00000001:
-                return  # 너무 적으면 드랍 안함
+                return False
         
         # RBTC 전송 (최대 5회 재시도)
         max_retries = 5
         tx_hash = None
         
         for attempt in range(max_retries):
-            tx_hash = self.tx_manager.send_rbtc(
-                wallet_address, 
-                drop_amount
-            )
+            tx_hash = self.tx_manager.send_rbtc(wallet_address, drop_amount)
             
             if tx_hash:
                 break
@@ -1308,18 +1301,17 @@ class RBTCDropBot:
                 logging.warning(f"드랍 전송 실패 (시도 {attempt + 1}/{max_retries}): {user_name}")
                 if attempt < max_retries - 1:
                     import time
-                    time.sleep(2)  # 2초 대기 후 재시도
+                    time.sleep(2)
         
         if tx_hash:
-            # 일일 전송량 업데이트 및 저장
+            # 일일 전송량 업데이트
             self.daily_sent[today] = today_sent + drop_amount
             self.wallet_manager.save_daily_sent(self.daily_sent)
             
-            # [modify] 쿨타임 업데이트 (새로 추가)
-            self.last_transaction_time[user_id] = datetime.now()  # [modify] 현재 시간으로 업데이트
+            # 쿨타임 업데이트
+            self.last_transaction_time[user_id] = datetime.now()
             
             # 드랍 알림
-            # RSK 메인넷 익스플로러 URL
             explorer_url = f"https://explorer.rsk.co/tx/{tx_hash}"
             
             drop_text = f"""
@@ -1328,10 +1320,10 @@ class RBTCDropBot:
 👤 {user_name}
 💰 {drop_amount:.8f} RBTC
 🔗 [트랜잭션 확인]({explorer_url})
-            """  # [modify] 쿨타임 정보 제거
+            """
             
             self.bot.reply_to(message, drop_text, parse_mode='Markdown', disable_web_page_preview=True)
-            logging.info(f"드랍 성공: {user_name} ({user_id}) -> {drop_amount:.8f} RBTC (쿨타임 {self.cooldown_seconds}초 시작)")  # [modify]
+            logging.info(f"드랍 성공: {user_name} ({user_id}) -> {drop_amount:.8f} RBTC")
             
             # 라운드 로빈 업데이트
             self.last_winner_tracker.update_winner(chat_id, user_id)
@@ -1349,9 +1341,64 @@ class RBTCDropBot:
             }
             self.drop_history.append(drop_record)
             self.wallet_manager.save_drop_history(self.drop_history)
+            return True
         else:
-            # 모든 재시도 실패시 로그만 남김
             logging.error(f"드랍 전송 완전 실패: {user_name} ({user_id}) - 모든 재시도 소진")
+            return False
+    
+    def process_message_drop(self, message, user_id: str, user_name: str):
+        """메시지별 드랍 처리 - 리팩토링된 버전"""
+        try:
+            logging.info(f"드랍 처리 시작 - 사용자: {user_name} ({user_id})")
+            
+            # 1. 블랙리스트 체크
+            if not self._check_blacklist(user_id, user_name):
+                return
+            
+            # 2. 채팅 타입 체크
+            if not self._check_chat_type(message):
+                return
+            
+            # 3. 메시지 길이 체크
+            if not self._check_message_length(message):
+                return
+            
+            # 4. 지갑 등록 체크
+            wallet_address = self._check_wallet_registration(user_id, user_name)
+            if not wallet_address:
+                return
+            
+            # 5. 쿨타임 체크
+            if not self._check_cooldown(user_id, user_name):
+                return
+            
+            # 6. 채팅방 인원 체크
+            chat_id, chat_member_count = self._check_chat_members(message)
+            if chat_member_count <= 3:
+                return
+            
+            # 7. 연속 당첨 방지 체크
+            if not self._check_consecutive_winner(chat_id, user_id, user_name, chat_member_count):
+                return
+            
+            # 8. 일일 한도 체크
+            today, today_sent, can_drop = self._check_daily_limit(chat_id)
+            if not can_drop:
+                return
+            
+            # 9. 랜덤 드랍 여부 결정
+            if not self.tx_manager:
+                logging.error("TransactionManager가 초기화되지 않았습니다.")
+                return
+            
+            if not self.tx_manager.should_drop(self.drop_rate):
+                return  # 드랍 안함
+            
+            logging.info(f"🎉 드랍 당첨! 사용자: {user_name}, 지갑: {wallet_address[:10]}...")
+            
+            # 10. 드랍 실행
+            self._execute_drop(message, user_id, user_name, wallet_address, chat_id, today, today_sent)
+                
         except Exception as e:
             logging.error(f"드랍 처리 중 예외 발생: {e}", exc_info=True)
             logging.error(f"예외 타입: {type(e).__name__}")
