@@ -812,6 +812,7 @@ class RBTCDropBot:
         
         # 봇 정보 저장
         self.bot_info = self.bot.get_me()
+        logging.info(f"봇 초기화 완료: @{self.bot_info.username}")
         
         # 설정 출력
         logging.info(f"=== 봇 설정 ===")
@@ -1392,6 +1393,7 @@ class RBTCDropBot:
                 return
             
             if not self.tx_manager.should_drop(self.drop_rate):
+                logging.info(f"🎲 드랍 확률 실패: {user_name} ({user_id}) - {self.drop_rate*100}% 확률 미달")
                 return  # 드랍 안함
             
             logging.info(f"🎉 드랍 당첨! 사용자: {user_name}, 지갑: {wallet_address[:10]}...")
@@ -1419,6 +1421,7 @@ class RBTCDropBot:
         while retry_count < 10:
             try:
                 logging.info(f"봇 폴링 시작... (시도: {retry_count + 1})")
+                logging.info("메시지 대기 중... (정상 작동 중)")
                 self.bot.infinity_polling(timeout=10, long_polling_timeout=5, skip_pending=True)
                 break  # 정상 종료시 루프 탈출
             except Exception as e:
