@@ -791,8 +791,8 @@ class RBTCDropBot:
         self.limit_notifications = self.wallet_manager.load_limit_notifications()
         
         # [modify] 전송 쿨타임 관리 (새로 추가)
-        self.last_transaction_time = {}  # [modify] 사용자별 마지막 전송 시간
-        self.cooldown_seconds = float(os.getenv('COOLDOWN_SECONDS', '60'))  # 기본 60초 쿨타임
+        self.last_transaction_time = None  # [modify] 전체 채팅방 마지막 전송 시간
+        self.cooldown_seconds = float(os.getenv('COOLDOWN_SECONDS', '30'))  # 기본 30초 쿨타임
         
         # 라운드 로빈 추적
         self.last_winner_tracker = LastWinnerTracker()
@@ -1215,15 +1215,14 @@ class RBTCDropBot:
         return wallet_address
     
     def _check_cooldown(self, user_id: str, user_name: str) -> bool:
-        """쿨타임 체크
+        """쿨타임 체크 - 전체 채팅방 쿨다운
         Returns: True if cooldown passed, False otherwise
         """
         now = datetime.now()
-        last_tx_time = self.last_transaction_time.get(user_id)
-        if last_tx_time:
-            time_diff = (now - last_tx_time).total_seconds()
+        if self.last_transaction_time:
+            time_diff = (now - self.last_transaction_time).total_seconds()
             if time_diff < self.cooldown_seconds:
-                logging.info(f"쿨타임: {user_name} ({user_id}) - {self.cooldown_seconds - time_diff:.1f}초 남음")
+                logging.info(f"전체 쿨타임 중: {self.cooldown_seconds - time_diff:.1f}초 남음")
                 return False
         return True
     
@@ -1309,8 +1308,8 @@ class RBTCDropBot:
             self.daily_sent[today] = today_sent + drop_amount
             self.wallet_manager.save_daily_sent(self.daily_sent)
             
-            # 쿨타임 업데이트
-            self.last_transaction_time[user_id] = datetime.now()
+            # 쿨타임 업데이트 - 전체 채팅방
+            self.last_transaction_time = datetime.now()
             
             # 드랍 알림
             explorer_url = f"https://explorer.rsk.co/tx/{tx_hash}"
