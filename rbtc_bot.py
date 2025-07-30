@@ -1136,6 +1136,7 @@ class RBTCDropBot:
         @self.bot.message_handler(func=lambda message: True)
         def handle_all_messages(message):
             """모든 메시지 처리 - 랜덤 드랍 트리거"""
+            logging.info("=== 메시지 핸들러 호출됨 ===")
             if message.from_user:
                 user_id = str(message.from_user.id)
                 user_name = f"@{message.from_user.username}" if message.from_user.username else message.from_user.first_name or "Unknown"
@@ -1329,12 +1330,16 @@ class RBTCDropBot:
         logging.info(f"RBTC 드랍 봇 시작 - Instance: {instance_id}")
         logging.info(f"드랍 확률: {self.drop_rate*100:.1f}%, 일일 한도: {self.max_daily_amount:.8f} RBTC")
         
-        try:
-            self.bot.infinity_polling(timeout=10, long_polling_timeout=5)
-        except Exception as e:
-            logging.error(f"봇 실행 오류: {e}")
-        finally:
-            logging.info("RBTC 드랍 봇 종료")
+        while True:
+            try:
+                logging.info("봇 폴링 시작...")
+                self.bot.infinity_polling(timeout=10, long_polling_timeout=5, skip_pending=True)
+            except Exception as e:
+                logging.error(f"봇 실행 오류: {e}")
+                logging.info("5초 후 재시작...")
+                time.sleep(5)
+        
+        logging.info("RBTC 드랍 봇 종료")
     
 
 def main():
