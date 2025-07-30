@@ -450,7 +450,11 @@ class WalletManager:
                 gist_data = response.json()
                 if 'blacklist.json' in gist_data['files']:
                     content = gist_data['files']['blacklist.json']['content']
-                    return json.loads(content) if content else []
+                    if content:
+                        loaded = json.loads(content)
+                        # None이거나 리스트가 아닌 경우 빈 리스트 반환
+                        return loaded if isinstance(loaded, list) else []
+                    return []
         except:
             pass
         
@@ -1175,26 +1179,42 @@ class RBTCDropBot:
         logging.info(f"드랍 처리 시작 - 사용자: {user_name} ({user_id})")
         
         # 블랙리스트 체크 (가장 먼저!)
-        logging.info(f"블랙리스트 체크 - user_id: {user_id} (type: {type(user_id)}), blacklist: {self.blacklist}")
+        logging.info(f"블랙리스트 체크 - user_id: {user_id} (type: {type(user_id)})")
+        logging.info(f"블랙리스트 내용: {self.blacklist} (type: {type(self.blacklist)})")
+        
+        # 블랙리스트가 None이거나 빈 경우 처리
+        if self.blacklist is None:
+            self.blacklist = []
+            logging.warning("블랙리스트가 None이어서 빈 리스트로 초기화")
+        
+        # 블랙리스트 체크
         if user_id in self.blacklist:
             logging.info(f"블랙리스트 사용자: {user_name} ({user_id})")
             return  # 블랙리스트 사용자는 드랍 불가
         
+        logging.info(f"블랙리스트 통과: {user_name} ({user_id})")
+        
         # 개인 채팅에서는 드랍 비활성화
+        logging.info(f"채팅 타입 체크: {message.chat.type}")
         if message.chat.type == 'private':
             logging.info(f"개인 채팅에서는 드랍이 비활성화됨")
             return
+        logging.info(f"그룹 채팅 확인됨")
         
         # [modify] 메시지 길이 체크 (5글자 이상)
+        logging.info(f"메시지 길이 체크: '{message.text}' ({len(message.text) if message.text else 0}글자)")
         if not message.text or len(message.text) < 5:
             logging.info(f"메시지 길이 부족: {len(message.text) if message.text else 0}글자 (최소 5글자)")
             return  # 5글자 미만시 드랍 없음
+        logging.info(f"메시지 길이 통과")
         
         # 지갑이 등록되어 있는지 확인
+        logging.info(f"지갑 등록 확인 중...")
         wallet_address = self.wallet_manager.get_wallet(user_id)
         if not wallet_address:
             logging.info(f"지갑 미등록 사용자: {user_name}")
             return  # 지갑 미등록시 드랍 없음
+        logging.info(f"지갑 등록 확인: {wallet_address[:10]}...")
         
         # [modify] 쿨타임 체크 (새로 추가)
         now = datetime.now()  # [modify]
