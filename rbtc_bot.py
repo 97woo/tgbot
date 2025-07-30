@@ -1176,7 +1176,8 @@ class RBTCDropBot:
     
     def process_message_drop(self, message, user_id: str, user_name: str):
         """메시지별 드랍 처리"""
-        logging.info(f"드랍 처리 시작 - 사용자: {user_name} ({user_id})")
+        try:
+            logging.info(f"드랍 처리 시작 - 사용자: {user_name} ({user_id})")
         
         # 블랙리스트 체크 (가장 먼저!)
         logging.info(f"블랙리스트 체크 - user_id: {user_id} (type: {type(user_id)})")
@@ -1217,26 +1218,33 @@ class RBTCDropBot:
         logging.info(f"지갑 등록 확인: {wallet_address[:10]}...")
         
         # [modify] 쿨타임 체크 (새로 추가)
+        logging.info(f"쿨타임 체크 시작")
         now = datetime.now()  # [modify]
         last_tx_time = self.last_transaction_time.get(user_id)  # [modify]
+        logging.info(f"마지막 거래 시간: {last_tx_time}, 현재 시간: {now}")
         if last_tx_time:  # [modify]
             time_diff = (now - last_tx_time).total_seconds()  # [modify]
+            logging.info(f"시간 차이: {time_diff}초, 쿨타임: {self.cooldown_seconds}초")
             if time_diff < self.cooldown_seconds:  # [modify]
                 logging.info(f"쿨타임: {user_name} ({user_id}) - {self.cooldown_seconds - time_diff:.1f}초 남음")  # [modify]
                 return  # [modify] 쿨타임 중
+        logging.info(f"쿨타임 통과")
         
         # 채팅방 인원 체크 (3명 이하면 드랍 금지)
+        logging.info(f"채팅방 인원 체크 시작")
         chat_id = message.chat.id
         chat_member_count = 4  # 기본값 (멤버 수를 가져올 수 없을 때)
         try:
             chat_member_count = self.bot.get_chat_member_count(chat_id)
+            logging.info(f"채팅방 인원: {chat_member_count}명")
             if chat_member_count <= 3:
                 logging.info(f"채팅방 인원 부족: {chat_member_count}명 (최소 4명 필요)")
                 return  # 3명 이하면 드랍 안함
-        except:
+        except Exception as e:
             # 멤버 수를 가져올 수 없으면 기본값(4) 사용
-            logging.debug(f"채팅방 멤버 수 조회 실패, 기본값 사용: {chat_member_count}")
+            logging.info(f"채팅방 멤버 수 조회 실패 ({e}), 기본값 사용: {chat_member_count}")
             pass
+        logging.info(f"채팅방 인원 체크 통과")
         
         # 연속 당첨 방지 체크
         if not self.last_winner_tracker.can_receive_drop(chat_id, user_id, total_users=chat_member_count):
@@ -1344,6 +1352,10 @@ class RBTCDropBot:
         else:
             # 모든 재시도 실패시 로그만 남김
             logging.error(f"드랍 전송 완전 실패: {user_name} ({user_id}) - 모든 재시도 소진")
+        except Exception as e:
+            logging.error(f"드랍 처리 중 예외 발생: {e}", exc_info=True)
+            logging.error(f"예외 타입: {type(e).__name__}")
+            logging.error(f"사용자: {user_name} ({user_id})")
     
     def run(self):
         """봇 실행"""
