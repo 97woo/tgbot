@@ -1227,9 +1227,9 @@ class RBTCDropBot:
                 return False
         return True
     
-    def _check_chat_members(self, message) -> tuple[int, int]:
+    def _check_chat_members(self, message) -> tuple[int, int, bool]:
         """채팅방 인원 체크
-        Returns: (chat_id, member_count)
+        Returns: (chat_id, member_count, has_enough_members)
         """
         chat_id = message.chat.id
         chat_member_count = 4  # 기본값
@@ -1237,9 +1237,10 @@ class RBTCDropBot:
             chat_member_count = self.bot.get_chat_member_count(chat_id)
             if chat_member_count <= 3:
                 logging.info(f"채팅방 인원 부족: {chat_member_count}명")
+                return chat_id, chat_member_count, False
         except:
             pass
-        return chat_id, chat_member_count
+        return chat_id, chat_member_count, True
     
     def _check_consecutive_winner(self, chat_id: int, user_id: str, user_name: str, chat_member_count: int) -> bool:
         """연속 당첨 방지 체크
@@ -1373,8 +1374,8 @@ class RBTCDropBot:
                 return
             
             # 6. 채팅방 인원 체크
-            chat_id, chat_member_count = self._check_chat_members(message)
-            if chat_member_count <= 3:
+            chat_id, chat_member_count, has_enough_members = self._check_chat_members(message)
+            if not has_enough_members:
                 return
             
             # 7. 연속 당첨 방지 체크
