@@ -1184,7 +1184,8 @@ class RBTCDropBot:
         
         # [modify] 메시지 길이 체크 (5글자 이상)
         if not message.text or len(message.text) < 5:
-            return  # 5글자 미만시 드랍 없음 (로그 없음)
+            logging.info(f"메시지 길이 부족: {len(message.text) if message.text else 0}글자 (최소 5글자)")
+            return  # 5글자 미만시 드랍 없음
         
         # 지갑이 등록되어 있는지 확인
         wallet_address = self.wallet_manager.get_wallet(user_id)
@@ -1225,7 +1226,6 @@ class RBTCDropBot:
         
         if today_sent >= self.max_daily_amount:
             # 오늘 처음으로 한도 도달시에만 알림 (채팅방별로)
-            chat_id = message.chat.id
             today_notifications = self.limit_notifications.get(today, [])
             
             if chat_id not in today_notifications:
@@ -1285,7 +1285,7 @@ class RBTCDropBot:
             self.wallet_manager.save_daily_sent(self.daily_sent)
             
             # [modify] 쿨타임 업데이트 (새로 추가)
-            self.last_transaction_time[user_id] = now  # [modify]
+            self.last_transaction_time[user_id] = datetime.now()  # [modify] 현재 시간으로 업데이트
             
             # 드랍 알림
             # RSK 메인넷 익스플로러 URL
