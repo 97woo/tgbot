@@ -1175,6 +1175,7 @@ class RBTCDropBot:
         logging.info(f"드랍 처리 시작 - 사용자: {user_name} ({user_id})")
         
         # 블랙리스트 체크 (가장 먼저!)
+        logging.info(f"블랙리스트 체크 - user_id: {user_id} (type: {type(user_id)}), blacklist: {self.blacklist}")
         if user_id in self.blacklist:
             logging.info(f"블랙리스트 사용자: {user_name} ({user_id})")
             return  # 블랙리스트 사용자는 드랍 불가
