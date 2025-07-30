@@ -1040,7 +1040,7 @@ class RBTCDropBot:
                 if not self.blacklist:
                     self.bot.reply_to(message, "📋 블랙리스트가 비어있습니다.")
                 else:
-                    list_text = "🚫 블랙리스트:\n\n"
+                    list_text = f"🚫 블랙리스트 ({len(self.blacklist)}명):\n\n"
                     for user_id in self.blacklist:
                         list_text += f"• {user_id}\n"
                     self.bot.reply_to(message, list_text)
